@@ -19,6 +19,7 @@ package com.example.android.shushme;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.database.Cursor;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
@@ -38,10 +39,18 @@ import com.google.android.gms.common.GooglePlayServicesRepairableException;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
 import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
+import com.google.android.gms.common.api.PendingResult;
+import com.google.android.gms.common.api.ResolvingResultCallbacks;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.ResultCallbacks;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.places.Place;
+import com.google.android.gms.location.places.PlaceBuffer;
 import com.google.android.gms.location.places.Places;
 import com.google.android.gms.location.places.ui.PlacePicker;
+
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements
         ConnectionCallbacks,
@@ -55,6 +64,7 @@ public class MainActivity extends AppCompatActivity implements
     // Member variables
     private PlaceListAdapter mAdapter;
     private RecyclerView mRecyclerView;
+    private GoogleApiClient mClient;
 
     /**
      * Called when the activity is starting
@@ -70,14 +80,14 @@ public class MainActivity extends AppCompatActivity implements
         mRecyclerView = (RecyclerView) findViewById(R.id.places_list_recycler_view);
         mRecyclerView.setLayoutManager(new LinearLayoutManager(this));
         // TODO (3) Modify the Adapter to take a PlaceBuffer in the constructor
-        mAdapter = new PlaceListAdapter(this);
+        mAdapter = new PlaceListAdapter(this, null);
         mRecyclerView.setAdapter(mAdapter);
 
 
         // Build up the LocationServices API client
         // Uses the addApi method to request the LocationServices API
         // Also uses enableAutoManage to automatically when to connect/suspend the client
-        GoogleApiClient client = new GoogleApiClient.Builder(this)
+        mClient = new GoogleApiClient.Builder(this)
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
                 .addApi(LocationServices.API)
@@ -87,6 +97,27 @@ public class MainActivity extends AppCompatActivity implements
 
     }
 
+    public void refreshPlacesData() {
+        Cursor cursor = getContentResolver().query(
+                PlaceContract.PlaceEntry.CONTENT_URI,
+                null,
+                null,
+                null,
+                null);
+        if (cursor == null || cursor.getCount() == 0) return;
+        List<String> guids = new ArrayList<>();
+        while (cursor.moveToNext()) {
+            guids.add(cursor.getString(cursor.getColumnIndex(PlaceContract.PlaceEntry.COLUMN_PLACE_ID)));
+        }
+        PendingResult<PlaceBuffer> placeResult = Places.GeoDataApi.getPlaceById(mClient,
+                guids.toArray(new String[guids.size()]));
+        placeResult.setResultCallback(new ResultCallback<PlaceBuffer>() {
+            @Override
+            public void onResult(@NonNull PlaceBuffer places) {
+                mAdapter.swapPlaces(places);
+            }
+        });
+    }
     // TODO (1) Implement a method called refreshPlacesData that:
         // - Queries all the locally stored Places IDs
         // - Calls Places.GeoDataApi.getPlaceById with that list of IDs
@@ -105,6 +136,7 @@ public class MainActivity extends AppCompatActivity implements
     @Override
     public void onConnected(@Nullable Bundle connectionHint) {
         Log.i(TAG, "API Client Connection Successful!");
+        refreshPlacesData();
     }
 
     /***
@@ -151,6 +183,7 @@ public class MainActivity extends AppCompatActivity implements
         } catch (Exception e) {
             Log.e(TAG, String.format("PlacePicker Exception: %s", e.getMessage()));
         }
+        refreshPlacesData();
     }
 
 
